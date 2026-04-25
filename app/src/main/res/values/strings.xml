@@ -23,4 +23,10 @@ This app was developed by IndicApps and has been released under an open source l
 For code and support information, go to:
 
 http://www.sudhirkk.com/indica/rotation-control-app/</string>
+    <string name="permission_overlay_title">Permission required</string>
+    <string name="permission_overlay_message">Allow Rotation Control to appear over other apps so the floating rotation button can be shown.</string>
+    <string name="permission_write_settings_title">Permission required</string>
+    <string name="permission_write_settings_message">Allow Rotation Control to modify system settings so it can change the screen rotation mode.</string>
+    <string name="permission_required">Permission is required to start Rotation Control.</string>
+    <string name="rotation_failed">Could not change screen rotation.</string>
 </resources>

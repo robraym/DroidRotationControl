@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.PixelFormat;
+import android.os.Build;
 import android.os.IBinder;
 import android.os.Vibrator;
 import android.provider.Settings;
@@ -12,6 +13,7 @@ import android.util.Log;
 import android.view.GestureDetector;
 import android.view.Gravity;
 import android.view.MotionEvent;
+import android.view.Surface;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.ImageView;
@@ -28,6 +30,7 @@ public class DroidHeadService extends Service {
     private float initialTouchY;
     private Context context;
     private View.OnTouchListener onTouchListener;
+    private boolean chatHeadAdded;
     public static boolean killService = false;
 
     public enum EnumStateButton {
@@ -37,13 +40,7 @@ public class DroidHeadService extends Service {
 
     private EnumStateButton StateButton;
 
-    WindowManager.LayoutParams params = new WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_PHONE,
-            //WindowManager.LayoutParams.TYPE_SYSTEM_ERROR,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-            PixelFormat.TRANSLUCENT);
+    private WindowManager.LayoutParams params;
 
     @Override
     public IBinder onBind(Intent intent) {
@@ -55,6 +52,13 @@ public class DroidHeadService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        context = getBaseContext();
+        if (!canDrawOverlays()) {
+            Log.d(DroidCommon.TAG, "DroidHeadService - missing overlay permission");
+            killService = true;
+            stopSelf();
+            return;
+        }
         InicializarVariavel();
         InicializarAcao();
         AtualizarPosicao();
@@ -142,10 +146,28 @@ public class DroidHeadService extends Service {
         //txtHead.setText("100");
 
         StateButton = EnumStateButton.VIEW;
+        params = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                getOverlayWindowType(),
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                PixelFormat.TRANSLUCENT);
         params.gravity = Gravity.CENTER;
         windowManager.addView(chatHead, params);
+        chatHeadAdded = true;
         //windowManager.addView(txtHead, params);
 
+    }
+
+    private int getOverlayWindowType() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            return WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY;
+        }
+        return WindowManager.LayoutParams.TYPE_PHONE;
+    }
+
+    private boolean canDrawOverlays() {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this);
     }
 
     private void InicializarAcao() {
@@ -183,21 +205,7 @@ public class DroidHeadService extends Service {
             @Override
             public boolean onSingleTapConfirmed(MotionEvent e) {
                 if (StateButton == EnumStateButton.VIEW) {
-                    if (Settings.System.getInt(getContentResolver(), Settings.System.ACCELEROMETER_ROTATION, 0) == 1)
-                    {
-                        Settings.System.putInt(getContentResolver(), Settings.System.ACCELEROMETER_ROTATION, 0);
-                    }
-
-                    if (Settings.System.getInt(getContentResolver(), Settings.System.USER_ROTATION, 0) == 0) {
-                        Settings.System.putInt(getContentResolver(), Settings.System.USER_ROTATION, 1);
-
-                    } else if (Settings.System.getInt(getContentResolver(), Settings.System.USER_ROTATION, 0) == 1) {
-                        Settings.System.putInt(getContentResolver(), Settings.System.USER_ROTATION, 2);
-                    } else if (Settings.System.getInt(getContentResolver(), Settings.System.USER_ROTATION, 0) == 2) {
-                        Settings.System.putInt(getContentResolver(), Settings.System.USER_ROTATION, 3);
-                    } else if (Settings.System.getInt(getContentResolver(), Settings.System.USER_ROTATION, 0) == 3) {
-                        Settings.System.putInt(getContentResolver(), Settings.System.USER_ROTATION, 0);
-                    }
+                    rotateScreen();
                 } else {
                     Vibrar(100);
 
@@ -240,6 +248,56 @@ public class DroidHeadService extends Service {
 
     }
 
+    private void rotateScreen() {
+        if (!canWriteSettings()) {
+            Toast.makeText(context, R.string.permission_required, Toast.LENGTH_LONG).show();
+            Intent intent = new Intent(context, DroidMainActivity.class);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(intent);
+            return;
+        }
+
+        try {
+            int currentRotation = Settings.System.getInt(
+                    getContentResolver(),
+                    Settings.System.USER_ROTATION,
+                    Surface.ROTATION_0);
+            int nextRotation = getNextRotation(currentRotation);
+
+            Settings.System.putInt(
+                    getContentResolver(),
+                    Settings.System.ACCELEROMETER_ROTATION,
+                    0);
+            Settings.System.putInt(
+                    getContentResolver(),
+                    Settings.System.USER_ROTATION,
+                    nextRotation);
+
+            Log.d(DroidCommon.TAG, "rotateScreen - current: " + currentRotation + ", next: " + nextRotation);
+        } catch (Exception ex) {
+            Log.d(DroidCommon.TAG, "rotateScreen: " + ex.getMessage());
+            Toast.makeText(context, R.string.rotation_failed, Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private int getNextRotation(int currentRotation) {
+        switch (currentRotation) {
+            case Surface.ROTATION_0:
+                return Surface.ROTATION_90;
+            case Surface.ROTATION_90:
+                return Surface.ROTATION_180;
+            case Surface.ROTATION_180:
+                return Surface.ROTATION_270;
+            case Surface.ROTATION_270:
+            default:
+                return Surface.ROTATION_0;
+        }
+    }
+
+    private boolean canWriteSettings() {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.System.canWrite(this);
+    }
+
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.d(DroidCommon.TAG, "DroidHeadService - onStartCommand");
@@ -251,7 +309,10 @@ public class DroidHeadService extends Service {
         super.onDestroy();
         LerStatusRotacao();
 
-        if (chatHead != null) windowManager.removeView(chatHead);
+        if (chatHeadAdded && chatHead != null) {
+            windowManager.removeView(chatHead);
+            chatHeadAdded = false;
+        }
         //if (txtHead != null) windowManager.removeView(txtHead);
 
         if (!killService) {
@@ -259,7 +320,9 @@ public class DroidHeadService extends Service {
             sendBroadcast(broadcastIntent);
             Log.d(DroidCommon.TAG, "DroidHeadService - onDestroy");
         }
-        DroidPreferences.SetInteger(context, "show", 0);
+        if (context != null) {
+            DroidPreferences.SetInteger(context, "show", 0);
+        }
     }
 
     @Override
